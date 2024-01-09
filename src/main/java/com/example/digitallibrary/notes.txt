@@ -1,0 +1,162 @@
+DIGITAL LIBRARY APPLICATION
+
+CONTROLLER:
+    -BOOK CONTROLLER:
+            :We have created apis for book (create, get, delete, update and search - in search we can search books by author, name, pages, genre etc...
+
+    -STUDENT CONTROLLER:
+            :We have created CRUD apis for student
+
+DTO: Data Transfer Object -> it contains classes that needs to be transferred between different layers of an application
+    -CREATE BOOK REQUEST:
+            :We have book and author details -> name, genre, pages, authorName, authorCountry, authorEmail
+            :to() -> this converts bookDTO to book object. The BookDTO object is a simplified representation of a book that is used for data transfer.
+                  -> The Book object is a more complete representation of a book that is used for business logic.
+
+    -CREATE STUDENT REQUEST:
+            :We have student details and to function.
+
+    -SEARCH BOOK REQUEST:
+            :Here we have defined our searchKey, searchValue, and operator to search books by filters
+            :In set allowedKeys are stored, in map allowedOperators for particular searchKey is stored.
+            :validate() -> this will validate the user is requesting for valid searchKeys and operators or not.
+
+MODELS:
+    - Author:
+            : @OneToMany(mappedBy = "my_author") -> this means 1 Author can write many books and many books can be written by 1 author.
+            : mappedBy -> Used to specify the referencing side of a bidirectional relationship.
+                    - This means that it is used to specify the side of the relationship that does not own the foreign key.
+                    - we are just creating a back reference for bookList not new column
+                    - also shows Author do not have ownership but somebody  else has
+            : @JsonIgnoreProperties({"my_author"}) -> (prevent infinite loop) ignoring a back reference , we don't want data of author again , obviously getting book then author was inserted
+
+    - Book:
+        - Book to Author have @ManyToOne relationship -> Many books can be written by 1 author and 1 author can write many books
+        - @JoinColumn: Mainly used to make the foreign key
+                     : this will make the primary key of author table as the foreign key of book table - by default it will join by the primary key
+                     : if we want to join with some other column in table then can use (name = "column name")
+        - my_author, my_student are the FK in the book table
+        - @JsonIgnoreProperties({"bookList"}) // to ignore bi relation - strict infinite looping, it is a forward reference not a back reference (back is when mappedBy is used)
+        - above property is used more than one times
+
+    - Student:
+        - bookList: @OneToMany(mappedBy = "my_student") list of student have issued
+        - transactionList: @OneToMany(mappedBy = "my_book") list of txn made by a student
+        - @JsonIgnoreProperties({"my_student"})
+        - above property is used for more than one variable
+
+    - Transaction:
+        - @ManyToOne -> txn -> book - many transaction can have one book
+        - @JoinColumn -> we want bookId to be a foreign key in this table
+        - @ManyToOne -> txt->stu - many transaction can have one student
+        - externalId -> this will be shown to the user except of the primary key
+        - @JsonIgnoreProperties({"transactionList"})
+
+REPOSITORY: contains classes that interact with the database , responsible to store, update, retrieve and delete the data.
+    - AUTHOR REPOSITORY:
+        - findByEmail() -> this is a fn used in book service
+
+    - BOOK REPOSITORY:
+        - Have fns : findByName(), findByGenre(), findByPages
+        - these are used to search book by them
+
+    - STUDENT REPOSITORY:
+    - TRANSACTION REPOSITORY:
+
+SERVICE: contains classes that implement business logic.
+    - AUTHOR SERVICE:
+        - @Autowired -> authorRepository to used their functions
+        - createOrGet(Author author) -> if author is not present then create otherwise get particular author
+
+    - BOOK SERVICE:
+        - @Autowired -> bookRepository and authorService - to write business logic, - not saving author blindly
+        - For Book create function -> 2(if author exists)  or 3(if author not exists) db calls will be there
+        - create() -> first we need to store the author - then he can write the books - otherwise we will get error from db side
+                    - error: unsaved transient from hibernate or foreign key constraints violation from db
+                    - using to() for dto to model conversion
+                    - first we are inserting an author
+                    - setting an author for a book
+                    - then we are saving a book
+
+        - delete() -> responsible to delete a book by id
+        - getAll() -> responsible to get all books
+        - search() -> responsible to search a book by applying lots of filters
+                    - we are validating the user request first, - using validate function
+                    - if request is valid then we are using switch case over searchKeys
+                        - case name -> calling fn from bookRepository to findByName and passing searchValue
+                        - case genre -> calling fn from bookRepository to findByGenre and passing searchValue
+                        - case id -> same as above
+                        - case pages -> save as above
+
+    - STUDENT SERVICE:
+        - @Autowired -> studentRepository
+        - create() -> responsible to create a student.
+                    - doing conversion from request to student
+                    - then saving a student
+
+        - get() -> getting a student by id.
+        -delete() -> deleting a student by id
+                    - first getting a student by id then deleting it
+
+        - update() -> responsible to update a student (name and contact)
+
+    - TRANSACTION SERVICE:
+        - we have autowired -> studentService, bookService, transactionRepository
+        - @Value -> used for the value defined in properties file
+                 - $ symbols refers for the value from that file meant to variable below
+                 - @Value("${student.issue.max_books}")
+                   private int maxBooksForIssuance;
+
+                   @Value("${student.issue.number_of_days}")
+                   private int numberOfDaysForIssuance;
+
+       - issueTxn(): for the transaction
+                - taking bookName and studentId to issue a book to the particular student
+                - we are searching the book first using search fn from bookService - if we don't get book show exception - book not found
+                - taking student details by an id
+                - putting some validation:
+                                        - we are checking is the student has reached the maximum issuance limit or not
+                                        - checking if bookList is empty throw exception
+
+               - creating book obj and assigning oth book from bookList
+               - using builder for transaction what we need for the transaction
+               - saving the transaction using repo
+               - now assign the book to the student after setting student to the book
+               - now after assigning book set status a success
+               - if there is some issue set status as failed
+               - in finally we are saving the transaction and returning externalId
+
+       - returnTxn(): for returning a book - while returning calculate fine
+               - getting the book using search fn of type list, get(0)th book ////it is returning a list (generic api is there )that why we need to get the 0th index
+               - now we need to do some validations:
+                       - we want to verify this particular student which is coming in the request - let say book is issued to student1 we some other student is returning the book, then we will not allow that student
+               - now after validations this is confirmed that this book is assigned to this student
+               - get the corresponding transaction:
+                        - Transaction issueTransaction = this.transactionRepository.findTopByStudentAndBookAndTransactionTypeAndTransactionStatusOrderByTransactionTimeDesc(student, book, TransactionType.ISSUE, TransactionStatus.SUCCESS);
+                        - This code is retrieving the most recent successful issue transaction for a particular student and book from a repository named transactionRepository. The retrieved transaction is stored in the variable issueTransaction.
+               - not calculate the fine , convert into days, if days are greater than allowed days, apply fine 1 rs for 1 day
+               - set student as null for book, and unassign using fn, then set status as success, return externalId
+               - if something went wrong set as failed and
+               - in finally save the fine first and return externalId after saving it
+
+
+UNIT TESTING - JUNIT AND MOCKITO
+
+@InjectMocks - coming from mocks - anything of related to mocks comes from junit.mocks
+             - similar to @autowired
+
+-------------------------------APPLYING SPRING SECURITY----------------------------------
+Authorization:-
+    - CRUD for books:
+            - get books -> authorized to admin, student
+            - create, delete book -> authorized to admin only
+
+    - CRUD for students:
+            - get student details -> authorized to admin and that particular student
+            - update , remove student -> student himself
+            - add new student -> public (anyone can sign up)- no authentication
+
+    - Issue , return books -> only student
+    - get transaction -> student and admin
+
+* for security we need implement interface UserDetails

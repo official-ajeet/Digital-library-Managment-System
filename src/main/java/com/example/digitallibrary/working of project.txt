@@ -1,0 +1,22 @@
+In the beginning a securedUser is created as an Admin
+        Authorities:- Can get any student details by using studentId.
+                   :- Create and get books.
+                   :- Can Add another admin.
+
+A Student can create his profile by entering his credentials.
+        Authorities:- By entering valid credentials
+                        :- Can update and delete only his account
+                        :- Issue and return the book
+                   :- Can get book details
+
+Functionalities:-
+
+Can search books by book name, author name, genre, id, pages.
+
+USED SPRING SECURITY FOR AUTHORIZATION AND AUTHENTICATION
+
+USED REDIS-CACHE TO RETRIEVE STUDENT DATA - data for admin by studentId
+1. First we check in the cache if the data available then return the data
+2. If data isn't cached then it fetches the corresponding data from database
+3. After fetching from database it sets to cache (updates cache)
+
